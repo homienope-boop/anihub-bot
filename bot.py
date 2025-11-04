@@ -4,14 +4,19 @@ import re
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command, CommandObject
 from aiogram.types import InlineQuery, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters.state import StateFilter
 from aiogram.enums import ParseMode
+import os
+from dotenv import load_dotenv
 
-TOKEN = "8276036682:AAFPbhlYtKlh69jrB-Kt3sRCp_BGk3P3p_M"
-ADMIN_ID = 1211351882
+load_dotenv()
+
+TOKEN = os.getenv('BOT_TOKEN')
+ADMIN_ID = os.getenv('ADMIN_ID')
+
+ADMIN_ID = int(ADMIN_ID)
 FILE = "anime_list.json"
 
 bot = Bot(token=TOKEN)
