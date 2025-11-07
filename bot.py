@@ -11,8 +11,6 @@ from aiogram.enums import ParseMode
 import os
 from dotenv import load_dotenv
 from aiogram.types import Message
-from aiogram import types
-import re
 
 emoji_pattern = re.compile(
     "[" 
@@ -32,9 +30,8 @@ def remove_emoji(text: str) -> str:
 load_dotenv()
 
 TOKEN = os.getenv('BOT_TOKEN')
-ADMIN_ID = os.getenv('ADMIN_ID')
-
-ADMIN_ID = int(ADMIN_ID)
+ADMIN_ID = int(os.getenv('ADMIN_ID'))
+CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
 FILE = "anime_list.json"
 
 bot = Bot(token=TOKEN)
@@ -82,14 +79,13 @@ async def start(message: types.Message):
         "Нажми кнопку ниже, чтобы сразу начать поиск любимого аниме:"
     )
 
-    # Экранирование для MarkdownV2 и указание parse_mode
     await message.answer(
         escape_md(welcome_text),
         reply_markup=keyboard,
         parse_mode=ParseMode.MARKDOWN_V2
     )
 
-# --- Команда /add (старт пошагового ввода) ---
+# --- Команда /add ---
 @dp.message(Command("add"))
 async def add_start(message: types.Message, state: FSMContext):
     if message.from_user.id != ADMIN_ID:
@@ -97,7 +93,7 @@ async def add_start(message: types.Message, state: FSMContext):
     await message.answer("Введите название аниме:")
     await state.set_state(AddAnime.title)
 
-# --- Пошаговое добавление аниме ---
+# --- Пошаговое добавление ---
 @dp.message(StateFilter(AddAnime))
 async def add_wizard(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
@@ -148,8 +144,13 @@ async def add_wizard(message: types.Message, state: FSMContext):
             "episodes": data.get("episodes"),
             "description": data.get("description")
         })
+
+        # --- Сортировка по title ---
+        anime.sort(key=lambda x: x["title"].lower())
+
         with open(FILE, "w", encoding="utf-8") as f:
             json.dump(anime, f, ensure_ascii=False, indent=2)
+
         await message.answer(f"✅ Аниме **{data.get('title')}** успешно добавлено!")
         await state.clear()
 
@@ -159,28 +160,25 @@ async def delete_anime(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
 
-    # Проверяем, что сообщение начинается с /delete
     if not message.text.lower().startswith("/delete"):
         return
 
-    # Получаем всё, что идёт после команды
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
         return await message.answer("Используй: /delete <название аниме>")
 
     title = parts[1].strip()
-
     anime = load_anime()
     for item in anime:
         if item["title"].lower() == title.lower():
             anime.remove(item)
+            anime.sort(key=lambda x: x["title"].lower())
             with open(FILE, "w", encoding="utf-8") as f:
                 json.dump(anime, f, ensure_ascii=False, indent=2)
             return await message.answer(f"🗑 Аниме **{title}** удалено.")
-
     await message.answer(f"❌ Аниме **{title}** не найдено в базе.")
 
-# --- Инлайн-поиск с безопасным Markdown ---
+# --- Инлайн-поиск ---
 @dp.inline_query()
 async def inline_search(inline_query: InlineQuery):
     query = inline_query.query.lower()
@@ -190,28 +188,14 @@ async def inline_search(inline_query: InlineQuery):
     for i, item in enumerate(anime):
         title = item.get("title", "")
         if query in title.lower():
-            # Получаем жанры и превращаем в строку
             genre_list = item.get("genre", [])
-            if isinstance(genre_list, list):
-                genre = ", ".join(genre_list)
-            else:
-                genre = str(genre_list)
-
+            genre = ", ".join(genre_list) if isinstance(genre_list, list) else str(genre_list)
             year = item.get("year", "—")
-            episodes = item.get("episodes", "—")
-            description = item.get("description", "")
             link = item.get("link", "")
-
-            text = (
-                f"🎬 {title}\n"
-                f"👉 Ссылка: {link}"
-            )
+            text = f"🎬 {title}\n👉 Ссылка: {link}"
 
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(
-                    text="🔍 Поискать ещё",
-                    switch_inline_query_current_chat=""
-                )]
+                [InlineKeyboardButton(text="🔍 Поискать ещё", switch_inline_query_current_chat="")]
             ])
 
             results.append(
@@ -219,21 +203,14 @@ async def inline_search(inline_query: InlineQuery):
                     id=str(i),
                     title=title,
                     description=f"{year} | {genre}",
-                    input_message_content=InputTextMessageContent(
-                        message_text=text
-                    ),
+                    input_message_content=InputTextMessageContent(message_text=text),
                     reply_markup=keyboard
                 )
             )
 
-
-    # Если ничего не найдено, тоже добавляем кнопку
     if not results and query:
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text="🔍 Поискать ещё",
-                switch_inline_query_current_chat=""
-            )]
+            [InlineKeyboardButton(text="🔍 Поискать ещё", switch_inline_query_current_chat="")]
         ])
         results.append(
             InlineQueryResultArticle(
@@ -246,48 +223,42 @@ async def inline_search(inline_query: InlineQuery):
 
     await inline_query.answer(results, cache_time=1, is_personal=True)
 
+# --- Обработка постов канала ---
 @dp.channel_post()
 async def channel_handler(message: Message):
-    # --- Проверяем, что это нужный канал ---
-    if message.chat.username != "anime_anihub_4k":
+    if message.chat.username != CHANNEL_USERNAME:
         return
 
     text = message.text or ""
-
-    # --- Проверяем, есть ли аниме-контент ---
     if not any(tag in text for tag in ["📜", "🎙", "🍜", "сезон"]):
-        # Если нет ключевых маркеров, игнорируем пост
         return
 
     anime = load_anime()
-
-    # --- Title ---
     lines = text.splitlines()
+
+    # Title без эмодзи
     title_line = next((l.strip() for l in lines if l and "🟠" not in l), None)
-    if title_line:
-        # Убираем эмодзи
-        title = re.sub(r'[^\w\s\d.,!?-]', '', title_line).strip()
-    else:
-        title = "Без названия"
+    title = re.sub(r'[^\w\s\d.,!?-]', '', title_line).strip() if title_line else "Без названия"
 
-    # --- Description ---
-    desc = ""
-    if "📜" in text and "🎙" in text:
-        desc = text.split("📜")[1].split("🎙")[0].strip()
+    # Description
+    desc = text.split("📜")[1].split("🎙")[0].strip() if "📜" in text and "🎙" in text else ""
 
-    # --- Озвучка ---
+    # Voice
     voice = []
     if "🎙" in text:
         vblock = text.split("🎙")[1].split("\n")[1].strip()
         voice = [v.replace("#", "").strip() for v in re.split(r'[,\s]+', vblock) if v.startswith("#")]
 
-    # --- Жанры ---
+    # Genre
     genre = []
     if "🍜" in text:
         gblock = text.split("🍜")[1].split("\n")[1]
-        genre = [g.replace("#", "").strip() for g in gblock.split() if g.startswith("#")]
+        genre = [
+            g.replace("#", "").replace(",", "").strip()  # убираем # и запятые
+            for g in gblock.split() if g.startswith("#")
+        ]
 
-    # --- Эпизоды / Сезон / Год ---
+    # Season / Year
     season = None
     year = None
     for line in lines:
@@ -300,10 +271,8 @@ async def channel_handler(message: Message):
             if match:
                 year = int(match.group(1))
 
-    # --- Прямая ссылка на пост ---
     link = f"https://t.me/{message.chat.username}/{message.message_id}"
 
-    # --- Добавляем запись в JSON ---
     anime.append({
         "title": title,
         "link": link,
@@ -314,11 +283,14 @@ async def channel_handler(message: Message):
         "description": desc
     })
 
+    # --- Сортировка по title ---
+    anime.sort(key=lambda x: x["title"].lower())
+
     with open(FILE, "w", encoding="utf-8") as f:
         json.dump(anime, f, ensure_ascii=False, indent=2)
 
     await bot.send_message(
-    ADMIN_ID,
+        ADMIN_ID,
         f"✅ Добавлено новое аниме:\n\n"
         f"Название: {title}\n"
         f"Сезон: {season if season else '—'}\n"
@@ -327,7 +299,7 @@ async def channel_handler(message: Message):
         f"Озвучка: {', '.join(voice) if voice else '—'}\n"
         f"Описание: {desc if desc else '—'}\n"
         f"Ссылка на пост: {link}"
-)
+    )
 
 # --- Запуск бота ---
 async def main():
