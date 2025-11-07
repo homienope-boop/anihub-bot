@@ -15,7 +15,7 @@ __pycache__/
 .python-version
 
 # Database files (если не хотите публиковать базу аниме)
-anime_list.json
+#anime_list.json
 
 # Logs
 *.log
