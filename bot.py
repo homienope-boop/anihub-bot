@@ -10,6 +10,24 @@ from aiogram.filters.state import StateFilter
 from aiogram.enums import ParseMode
 import os
 from dotenv import load_dotenv
+from aiogram.types import Message
+from aiogram import types
+import re
+
+emoji_pattern = re.compile(
+    "[" 
+    "\U0001F600-\U0001F64F"  # emoticons
+    "\U0001F300-\U0001F5FF"  # symbols & pictographs
+    "\U0001F680-\U0001F6FF"  # transport & map symbols
+    "\U0001F1E0-\U0001F1FF"  # flags
+    "\U00002702-\U000027B0"
+    "\U000024C2-\U0001F251"
+    "]+",
+    flags=re.UNICODE,
+)
+
+def remove_emoji(text: str) -> str:
+    return emoji_pattern.sub("", text).strip()
 
 load_dotenv()
 
@@ -172,7 +190,13 @@ async def inline_search(inline_query: InlineQuery):
     for i, item in enumerate(anime):
         title = item.get("title", "")
         if query in title.lower():
-            genre = item.get("genre", "")
+            # Получаем жанры и превращаем в строку
+            genre_list = item.get("genre", [])
+            if isinstance(genre_list, list):
+                genre = ", ".join(genre_list)
+            else:
+                genre = str(genre_list)
+
             year = item.get("year", "—")
             episodes = item.get("episodes", "—")
             description = item.get("description", "")
@@ -180,14 +204,9 @@ async def inline_search(inline_query: InlineQuery):
 
             text = (
                 f"🎬 {title}\n"
-                #f"📅 Год: {year}\n"
-                #f"🎭 Жанр: {genre}\n"
-                #f"📺 Серий: {episodes}\n"
-                #f"📝 {description}\n"
                 f"👉 Ссылка: {link}"
             )
 
-            # Кнопка, которая всегда вставляет инлайн-бота в этот чат
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(
                     text="🔍 Поискать ещё",
@@ -199,13 +218,14 @@ async def inline_search(inline_query: InlineQuery):
                 InlineQueryResultArticle(
                     id=str(i),
                     title=title,
-                    description=f"{item.get('year', '—')} | {item.get('genre', '—')}",
+                    description=f"{year} | {genre}",
                     input_message_content=InputTextMessageContent(
                         message_text=text
                     ),
-                    reply_markup=keyboard  # кнопка будет под сообщением
+                    reply_markup=keyboard
                 )
             )
+
 
     # Если ничего не найдено, тоже добавляем кнопку
     if not results and query:
@@ -225,6 +245,76 @@ async def inline_search(inline_query: InlineQuery):
         )
 
     await inline_query.answer(results, cache_time=1, is_personal=True)
+
+@dp.channel_post()
+async def channel_handler(message: Message):
+    # Обрабатываем только канал https://t.me/anime_anihub_4k
+    if not message.chat or message.chat.username != "anime_anihub_4k":
+        return
+
+    text = message.caption or message.text or ""
+    anime = load_anime()
+
+    # --- Title ---
+    raw_title = next((l.strip() for l in lines if l and "🟠" not in l), "Без названия")
+    title = remove_emoji(raw_title)
+
+    # --- Description ---
+    desc = ""
+    if "📜" in text and "🎙" in text:
+        try:
+            desc = text.split("📜")[1].split("🎙")[0].strip()
+        except:
+            desc = ""
+
+    # --- Озвучка ---
+    voice = []
+    if "🎙" in text:
+        try:
+            vblock = text.split("🎙")[1].split("\n")[1].strip()
+            voice = [v.replace("#", "").strip() for v in re.split(r'[,\s]+', vblock) if v.startswith("#")]
+        except:
+            voice = []
+
+    # --- Жанры ---
+    genre = []
+    if "🍜" in text:
+        try:
+            gblock = text.split("🍜")[1].split("\n")[1]
+            genre = [g.replace("#", "").strip() for g in gblock.split() if g.startswith("#")]
+        except:
+            genre = []
+
+    # --- Эпизоды / Сезон / Год ---
+    season = None
+    year = None
+    for line in lines:
+        if "сезон" in line.lower():
+            match = re.search(r"(\d+)\s*сезон", line.lower())
+            if match:
+                season = int(match.group(1))
+        if "#" in line:
+            match = re.search(r"#(\d{4})", line)
+            if match:
+                year = int(match.group(1))
+
+    # --- Прямая ссылка на пост ---
+    link = f"https://t.me/{message.chat.username}/{message.message_id}"
+
+    anime.append({
+        "title": title,
+        "link": link,
+        "season": season,
+        "genre": genre,        # массив жанров
+        "year": year,
+        "voice": voice,        # массив озвучек
+        "description": desc
+    })
+
+    with open(FILE, "w", encoding="utf-8") as f:
+        json.dump(anime, f, ensure_ascii=False, indent=2)
+
+    print(f"✅ Добавлено: {title}")
 
 
 # --- Запуск бота ---
