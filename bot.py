@@ -272,14 +272,20 @@ async def inline_search(inline_query: types.InlineQuery):
         if query in title.lower():
             genre = ", ".join(item.get("genre", []))
             year = ", ".join(map(str, item.get("year", []))) or "—"
+            season_list = item.get("season", [])
+            season = ", ".join(map(str, season_list)) if season_list else "—"
             episodes = ", ".join(map(str, item.get("episodes", []))) or "—"
+            rating_list = item.get("rating", [])
+            rating = ", ".join(map(str, rating_list)) if rating_list else "—"
             link = item.get("link", "")
 
             text = (
                 f"🎬 {title}\n"
                 f"📅 Год: {year}\n"
                 f"🎭 Жанр: {genre}\n"
+                f"📺 Сезоны: {season}\n"
                 f"📝 Эпизоды: {episodes}\n"
+                f"⭐️ Рейтинг: {rating}\n"
                 f"👉 Ссылка: {link}"
             )
 
@@ -375,7 +381,14 @@ async def channel_handler(message: Message):
     await bot.send_message(
         ADMIN_ID,
         f"✅ Добавлено новое аниме:\n\n"
-        f"Название: {title}"
+        f"Название: {title}\n"
+        f"Сезон: {', '.join(map(str, season_list)) if season_list else '—'}\n"
+        f"Жанр: {', '.join(genre) if genre else '—'}\n"
+        f"Год: {', '.join(map(str, year_list)) if year_list else '—'}\n"
+        f"Озвучка: {', '.join(voice) if voice else '—'}\n"
+        f"Эпизоды: {', '.join(map(str, episodes_list)) if episodes_list else '—'}\n"
+        f"Рейтинг: {', '.join(map(str, rating_list)) if rating_list else '—'}\n"
+        f"Ссылка на пост: {link}"
     )
 
 # --- Запуск бота ---
