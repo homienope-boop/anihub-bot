@@ -248,42 +248,44 @@ async def inline_search(inline_query: InlineQuery):
 
 @dp.channel_post()
 async def channel_handler(message: Message):
-    # Обрабатываем только канал https://t.me/anime_anihub_4k
-    if not message.chat or message.chat.username != "anime_anihub_4k":
+    # --- Проверяем, что это нужный канал ---
+    if message.chat.username != "anime_anihub_4k":
         return
 
-    text = message.caption or message.text or ""
+    text = message.text or ""
+
+    # --- Проверяем, есть ли аниме-контент ---
+    if not any(tag in text for tag in ["📜", "🎙", "🍜", "сезон"]):
+        # Если нет ключевых маркеров, игнорируем пост
+        return
+
     anime = load_anime()
 
     # --- Title ---
-    raw_title = next((l.strip() for l in lines if l and "🟠" not in l), "Без названия")
-    title = remove_emoji(raw_title)
+    lines = text.splitlines()
+    title_line = next((l.strip() for l in lines if l and "🟠" not in l), None)
+    if title_line:
+        # Убираем эмодзи
+        title = re.sub(r'[^\w\s\d.,!?-]', '', title_line).strip()
+    else:
+        title = "Без названия"
 
     # --- Description ---
     desc = ""
     if "📜" in text and "🎙" in text:
-        try:
-            desc = text.split("📜")[1].split("🎙")[0].strip()
-        except:
-            desc = ""
+        desc = text.split("📜")[1].split("🎙")[0].strip()
 
     # --- Озвучка ---
     voice = []
     if "🎙" in text:
-        try:
-            vblock = text.split("🎙")[1].split("\n")[1].strip()
-            voice = [v.replace("#", "").strip() for v in re.split(r'[,\s]+', vblock) if v.startswith("#")]
-        except:
-            voice = []
+        vblock = text.split("🎙")[1].split("\n")[1].strip()
+        voice = [v.replace("#", "").strip() for v in re.split(r'[,\s]+', vblock) if v.startswith("#")]
 
     # --- Жанры ---
     genre = []
     if "🍜" in text:
-        try:
-            gblock = text.split("🍜")[1].split("\n")[1]
-            genre = [g.replace("#", "").strip() for g in gblock.split() if g.startswith("#")]
-        except:
-            genre = []
+        gblock = text.split("🍜")[1].split("\n")[1]
+        genre = [g.replace("#", "").strip() for g in gblock.split() if g.startswith("#")]
 
     # --- Эпизоды / Сезон / Год ---
     season = None
@@ -301,21 +303,31 @@ async def channel_handler(message: Message):
     # --- Прямая ссылка на пост ---
     link = f"https://t.me/{message.chat.username}/{message.message_id}"
 
+    # --- Добавляем запись в JSON ---
     anime.append({
         "title": title,
         "link": link,
         "season": season,
-        "genre": genre,        # массив жанров
+        "genre": genre,
         "year": year,
-        "voice": voice,        # массив озвучек
+        "voice": voice,
         "description": desc
     })
 
     with open(FILE, "w", encoding="utf-8") as f:
         json.dump(anime, f, ensure_ascii=False, indent=2)
 
-    print(f"✅ Добавлено: {title}")
-
+    await bot.send_message(
+    ADMIN_ID,
+        f"✅ Добавлено новое аниме:\n\n"
+        f"Название: {title}\n"
+        f"Сезон: {season if season else '—'}\n"
+        f"Жанр: {', '.join(genre) if genre else '—'}\n"
+        f"Год: {year if year else '—'}\n"
+        f"Озвучка: {', '.join(voice) if voice else '—'}\n"
+        f"Описание: {desc if desc else '—'}\n"
+        f"Ссылка на пост: {link}"
+)
 
 # --- Запуск бота ---
 async def main():
