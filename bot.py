@@ -312,7 +312,16 @@ async def channel_handler(message: Message):
     if message.chat.username != CHANNEL_USERNAME:
         return
 
-    text = message.text or ""
+    # ✅ Получаем текст правильно
+    if message.caption:
+        text = message.caption
+    elif message.text:
+        text = message.text
+    else:
+        return
+
+    text = text.strip()
+
     if not any(tag in text for tag in ["📜", "🎙", "🍜", "сезон"]):
         return
 
