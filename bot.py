@@ -312,7 +312,6 @@ async def channel_handler(message: Message):
     if message.chat.username != CHANNEL_USERNAME:
         return
 
-    # ✅ Получаем текст правильно
     if message.caption:
         text = message.caption
     elif message.text:
@@ -320,9 +319,11 @@ async def channel_handler(message: Message):
     else:
         return
 
-    text = text.strip()
+    text = text.strip()  # удаляем лишние пробелы и переносы
 
-    if not any(tag in text for tag in ["📜", "🎙", "🍜", "сезон"]):
+    # Обрабатываем только посты, которые полностью соответствуют шаблону
+    required_tags = ["📜", "🎙", "🍜", "сезон"]
+    if not all(tag in text for tag in required_tags):
         return
 
     anime = load_anime()
